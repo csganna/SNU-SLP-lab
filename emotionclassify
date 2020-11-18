@@ -1,0 +1,188 @@
+# -*- coding: utf-8 -*-
+
+
+from random import seed, shuffle
+from collections import Counter, defaultdict
+from scipy import log, argmax
+
+# 0. 코퍼스 준비
+# 0.1. 파일 읽기
+f = open('poems.txt', 'r', encoding='utf-8')
+# 정답과 데이터 분리하기
+data = [line.split('\t') for line in f] 
+# 문서를 형태소의 리스트로 바꾸기
+# c for class(sentiment), doc for document(review)
+poem_dict = {int(poemid): (int(cat), text.strip()) for poemid, cat, author, title, text in data}
+data = [(int(poemid), int(cat), list(text.strip())) for poemid, cat, author, title, text in data]
+f.close()
+'''
+>>> len(data)
+160
+>>> data[0]
+(0, 1, ['垂', '緌', '饮', '清', '露', '，', '流', '响', '出', '疏', '桐', '。', '居', '高', '声', '自', '远', '，', '非', '是', '藉', '秋', '风', '。'])
+'''
+
+# 0.2. 순서 섞기
+seed(471)
+shuffle(data)
+'''
+>>> data[0]
+(97, 1, ['草', '树', '知', '春', '不', '久', '归', '，', '百', '般', '红', '紫', '斗', '芳', '菲', '。', '杨', '花', '榆', '荚', '无', '才', '思', '，', '惟', '解', '漫', '天', '作', '雪', '飞', '。'])
+'''
+
+# 0.3. 훈련 집합과 실험 집합으로 분할하기
+boundary = int(len(data) * 0.9)
+# 코퍼스의 90%를 훈련 집합으로, 나머지 10%를 실험 집합으로 삼기
+train = data[:boundary]
+test = data[boundary:]
+
+
+# 1. 훈련 집합에서 로그사전확률 P(c) 구하기
+# 1.1. 문서 개수
+Nc = Counter(c for poemid, c, doc in train)
+Ndoc = len(train)
+'''
+>>> Nc
+Counter({0: 75, 1: 69})
+>>> Ndoc
+144
+'''
+
+# 1.2. 로그사전확률
+logprior = {c: log(Nc[c]/Ndoc) for c in Nc}
+'''
+>>> logprior
+{1: -0.7357067949787413, 0: -0.6523251860396901}
+'''
+
+
+# 2. 훈련 집합에서 로그가능도 P(w|c) 구하기
+# 2.1. 훈련 집합의 어휘 목록
+vocabulary = []
+for poemid, c, doc in train:
+	for word in doc:
+		if word not in vocabulary:
+			vocabulary.append(word)
+
+'''
+>>> len(vocabulary)
+1403
+>>> vocabulary[:5]
+['草', '树', '知', '春', '不']
+'''
+
+# 2.2. 범주별로 문서 합치기
+bigdoc = defaultdict(list)
+for poemid, c, doc in train:
+	bigdoc[c].extend(doc)
+
+'''
+>>> len(bigdoc[1]), len(bigdoc[0])
+(2941, 3606)
+>>> bigdoc[1][:14]
+['草', '树', '知', '春', '不', '久', '归', '，', '百', '般', '红', '紫', '斗', '芳']
+>>> bigdoc[0][:14]
+['故', '乡', '杳', '无', '际', '，', '日', '暮', '且', '孤', '征', '。', '川', '原']
+'''
+
+# 2.3. 범주별 "큰 문서"에서 어휘 출현 횟수 세기
+counts = defaultdict(Counter)
+for c, doc in bigdoc.items():
+	counts[c] = Counter(doc)
+
+'''
+>>> len(counts[1]), len(counts[0])
+(964, 1011)
+>>> counts[1].most_common(5)
+[('，', 211), ('。', 210), ('山', 30), ('人', 26), ('春', 24)]
+>>> counts[0].most_common(5)
+[('，', 260), ('。', 239), ('人', 39), ('不', 37), ('春', 32)]
+>>> counts[1]['想']
+1
+>>> counts[0]['想']
+0
+>>> counts[0]['哀']
+1
+>>> counts[1]['哀']
+0
+'''
+
+# 2.4. Add-1 smoothing
+for w in vocabulary:
+	for c in counts:
+		counts[c][w] += 1
+
+'''
+>>> len(counts[1]), len(counts[0])
+(1403, 1403)
+>>> counts[1].most_common(5)
+[('，', 212), ('。', 211), ('山', 31), ('人', 27), ('春', 25)]
+>>> counts[0]['想']
+1
+>>> counts[1]['哀']
+1
+'''
+
+# 2.5. 로그가능도
+loglikelihood = defaultdict(dict)
+for c, counter in counts.items():
+	count_c = sum(counter.values())
+	for w in vocabulary:
+		loglikelihood[w][c] = log(counter[w]/count_c)
+
+# for w, lll in loglikelihood.items():
+# 	print(f'{w}\t{lll[1] - lll[0]}')
+
+'''
+>>> loglikelihood['坐']
+{1: -6.179326284277552, 0: -8.518991573357617}
+>>> loglikelihood['垂']
+{1: -6.430640712558458, 0: -8.518991573357617}
+>>> loglikelihood['羡']
+{1: -6.584791392385716, 0: -8.518991573357617}
+>>> loglikelihood['乡']
+{1: -8.37655086161377, 0: -6.321766996021397}
+>>> loglikelihood['秀']
+{1: -6.990256500493881, 0: -8.518991573357617}
+>>> loglikelihood['离']
+{1: -8.37655086161377, 0: -6.321766996021397}
+>>> loglikelihood['愁']
+{1: -7.683403681053826, 0: -5.685778229301401}
+>>> loglikelihood['。']
+{1: -3.0246927281377047, 0: -3.0383526500156255}
+>>> loglikelihood['，']
+{1: -3.019964586941759, 0: -2.9544711660349234}
+>>> loglikelihood['醉']
+{1: -6.990256500493881, 0: -6.909553660923517}
+'''
+
+# 3. 실험 집합에서 범주 예측하기
+results = {}
+for poemid, real, testdoc in test:
+	sums = {c: lp for c, lp in logprior.items()}
+	for c in sums.keys():
+		for word in testdoc:
+			if word in vocabulary:
+				sums[c] += loglikelihood[word][c]
+	predict = list(sums.keys())[argmax(list(sums.values()))]
+	results[poemid] = (real, predict)
+
+'''
+>>> results
+{111: (1, 1), 144: (0, 0), 70: (1, 1), 132: (0, 0), 14: (1, 0), 135: (0, 0), 126: (0, 0), 19: (0, 0), 92: (0, 0), 138: (0, 0), 62: (0, 0), 90: (1, 1), 82: (1, 0), 118: (1, 1), 76: (1, 1), 17: (1, 0)}
+>>> Counter(results.values())
+Counter({(0, 0): 8, (1, 1): 5, (1, 0): 3})
+>>> poem_dict[17]
+(1, '烽火照西京，心中自不平。牙璋辞凤阙，铁骑绕龙城。雪暗凋旗画，风多杂鼓声。宁为百夫长，胜作一书生。')
+'''
+
+accuracy = sum(1 for real, predict in results.values() if real == predict) / len(results)
+precision_pos = sum(1 for real, predict in results.values() if real == predict == 1) / sum(1 for real, predict in results.values() if predict == 1)
+precision_neg = sum(1 for real, predict in results.values() if real == predict == 0) / sum(1 for real, predict in results.values() if predict == 0)
+recall_pos = sum(1 for real, predict in results.values() if real == predict == 1) / sum(1 for real, predict in results.values() if real == 1)
+recall_neg = sum(1 for real, predict in results.values() if real == predict == 0) / sum(1 for real, predict in results.values() if real == 0)
+
+'''
+>>> accuracy, precision_pos, precision_neg, recall_pos, recall_neg
+(0.8125, 1.0, 0.7272727272727273, 0.625, 1.0)
+'''
