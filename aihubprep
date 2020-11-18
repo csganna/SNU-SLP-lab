@@ -1,0 +1,498 @@
+#PATH configuration
+
+stage=1
+corpus_info=/data1/jongin/kaldi/egs/aihub_for_seminar/corpus_info
+local=/data1/jongin/kaldi/egs/aihub_for_seminar/local
+
+
+#####################################################
+
+# File Renaming Process
+if [ "$stage" -eq 0 ]; then
+
+
+for file in $(find /data1/jongin/jio/KsponSpeech_8K -iname "*.txt"|sort)
+do
+num1=$(echo $file|cut -d '/' -f 5|cut -d '_' -f 2)
+num2=$(echo $file|cut -d '/' -f 6|cut -d '_' -f 2)
+num3=$(echo $file|cut -d '/' -f 7|cut -d '_' -f 2|cut -d '.' -f 1)
+Kspon=$(echo $file|cut -d '/' -f 5|cut -d '_' -f 1)
+base=$(echo $file|cut -d '/' -f 1,2,3,4,5,6)
+#file renaming
+textfile_prev=$(echo $file)
+textfile_after=$(echo $base/${Kspon}_${num1}_${num2}_${num3}.txt)
+#echo $textfile_prev
+#echo $textfile_after
+
+sudo mv $textfile_prev $textfile_after
+
+done
+fi
+
+#####################################################
+if [ ""$stage"" -eq 0 ]; then
+
+#read -p "Press to continue"
+#pcm_count=$(ls `pwd`/etc_*/Kspon*/*.wav|sort|wc -w)
+
+for file in $(find /data1/jongin/jio/KsponSpeech_8K -iname "*.pcm"|sort)
+do
+
+num1=$(echo $file|cut -d '/' -f 5|cut -d '_' -f 2)
+num2=$(echo $file|cut -d '/' -f 6|cut -d '_' -f 2)
+num3=$(echo $file|cut -d '/' -f 7|cut -d '_' -f 2|cut -d '.' -f 1)
+
+#echo $file
+#echo $num3
+
+Kspon=$(echo $file|cut -d '/' -f 5|cut -d '_' -f 1)
+base=$(echo $file|cut -d '/' -f 1,2,3,4,5,6)
+
+audiofile_prev=$(echo $file)
+audiofile_after=$(echo $base/${Kspon}_${num1}_${num2}_${num3}.pcm)
+#wav_count0=$(echo $file|ls `pwd`/etc_*/Kspon*/*.wav|sort|wc -w)
+
+#read -p "press to convert 8bit"
+
+
+sudo mv $audiofile_prev $audiofile_after
+
+sox_after=$(echo $base/${Kspon}_${num1}_${num2}_${num3}.wav)
+
+
+#audio pcm->wav
+#to 16bit
+sox -t raw -e signed-integer -r 16000 -c 1 -b 16 $audiofile_after $sox_after
+
+
+#### Question!!!!!!!!!!!!!!!!! #####
+#to 8bit
+#sox -r 8000 -c 1 -b 16 $sox_after $sox_after
+
+## question 1##
+#wav_count1=$(echo $file|ls `pwd`/etc_*/Kspon*/*.wav|sort|wc -w)
+
+sudo rm -r $audiofile_after
+
+
+
+
+done
+
+#if [ $pcm_count -eq $wav_count1 ]; then
+#echo $pcm_count
+#echo $wav_count1
+#echo "SUCESS"
+#fi
+
+
+fi
+
+#####################################################
+
+if [ "$stage" -eq 0 ]; then
+#iconv cp949 -> utf-8
+
+for file in $(find /data1/jongin/jio/KsponSpeech_8K -iname "*.txt"|sort)
+do
+dos2unix $file
+iconv -f CP949 -t UTF8 -o $file $file
+done
+
+
+
+fi
+
+if [ "$stage" -eq 0 ]; then
+
+rm aihub*
+rm am_*
+rm corp_ug*
+
+fi
+
+####################################################
+
+# wav.scp 
+if [ "$stage" -eq 0 ]; then
+
+if [ -f total_filelist.list ]; then
+rm total_filelist.list
+fi
+#aggregating from all file to one file
+
+#/data1/jongin/jio/KsponSpeech_8K/0326/Kspon-8K-0326_KsponSpeech_325059.wav
+
+for file in $(find /data1/jongin/jio/KsponSpeech_8K -iname "*.wav"|sort)
+do
+
+name=$(echo $file|cut -d '/' -f 7|cut -d '.' -f 1)
+
+#echo -e "${name} ${file}" >> aihub_sph.scp
+#echo -e "${name} cat ${file} |" >> aihub_wav.scp
+#echo -e "${file}" >> aihub.flist
+echo -e "${file}" >> total_filelist.list
+
+done
+
+
+#copy to corpus info
+cp total_filelist.list $corpus_info
+
+fi
+
+############################################
+
+# text normalization -> sentence piece model
+
+if [ "$stage" -eq 0 ]; then
+normalize_text() {
+    sed -e "s/l\//<lagh>/g" -e 's/b\//<spn>/g' -e 's/n\//<spn>/g' -e 's/o\//<noise>/g' \
+        -e 's/+/ /g' -e 's/  / /g' -e 's/?//g' \
+        -e 's/?//g' -e 's/*//g' -e 's/\.//g' -e 's/^ //g'\
+        -e 's/<\/s>//g' -e 's/<s>//g' -e 's/!//g' \
+        -e 's/\%//g' -e 's/<s>//g' -e 's/%//g' \
+        -e 's/-pau-/pau/g'
+}
+
+#sed "s/\(([a-zA-Z0-9]*)\)\/\(([a-zA-Z0-9]*)\)/ \2/g" ktext
+#sed "s/\((\S*)\)\/\((\S*)/ \2/g" ktext
+preprocess_text() {
+    sed -e "s/'//g" -e 's/"//g' -e 's/\.//g' -e 's/<br \/>//g' \
+        -e 's/,//g' -e 's/(//g' -e 's/)//g' -e 's/\!//g' \
+        -e 's/\?//g' -e 's/\;//g' -e 's/\://g' -e 's/^ //g' | tr -s " "
+}
+#if [ -f aihub.tmp ]; then
+#rm aihub.tmp
+#fi
+
+
+#for file in $(find /data1/jongin/jio/KsponSpeech_8K -iname "*.txt"|sort)
+#do
+#name=$(echo $file|cut -d '/' -f 7|cut -d '.' -f 1)
+#text=$(cat $file|normalize_text)
+#echo -e "$name\t$text" >> aihub.tmp
+#done
+cat ksponspeech8k-u8.txt|normalize_text > ksponspeech8k_textnorm-u8.txt
+
+python3 ko.py ksponspeech8k_textnorm-u8.txt aihub.tag aihub.text
+
+
+#일단 preprocess에 only_corpus_u8.txt와 total_sentence-u8.text를 core에서 카피 한다.
+#이건 직접 카피하는 게 낫겠다. 따로 only_corpus-u8.txt, total_sentence-u8.text 만들고 나서
+cp aihub.text $corpus_info/only_corpus-u8.txt
+cp aihub.tag $corpus_info/total_sentence-u8.txt
+
+fi
+
+#####################################################
+
+#Sentence Piece Model
+
+#path=$(cat ktag|awk -F '\t' '{print $1}')
+#text=$(cat ktag|awk -F '\t' '{print $2}'|spm_encode --model=news-naver-nlp-kisa_v6-400k.model|sed -e "s/▁//g")
+#echo $text
+
+#두번째 이후 열 추출
+#awk '{print substr($0,index($0,$2)) }'
+#cut -b28-
+#fi
+
+#grep -v "[[:punct:]]" ktext >> text
+#cat wav.txt |sed -e '%s/ /\n' 
+
+
+
+
+##############################################
+# spk2utt
+
+if [ "$stage" -eq 0 ]; then
+
+
+if [ -f aihub.spk2utt ]; then
+  rm aihub.spk2utt
+fi
+
+
+for file in $(find `pwd`/KsponSpeech_0* -iname "*.wav"|sort)
+do
+
+name=$(echo $file|cut -d '/' -f 7|cut -d '.' -f 1)
+section=$(echo $name|cut -d '_' -f 2)
+spkr=$(echo $name|cut -d '_' -f 1,2,3)
+uttr=$(echo $name|cut -d '_' -f 1,2,3,4)
+
+echo -e "${spkr} ${uttr}" >> aihub.spk2utt
+
+done
+
+
+
+fi
+################################################
+# vocab freq language model
+if [ "$stage" -eq 0 ]; then
+
+#vocab generation (1gram)
+/usr/share/srilm/bin/i686-m64/ngram-count -text aihub.text -write-vocab am_tr_v2.voc -write1 corp_ug_count.txt
+
+
+
+cat corp_ug_count.txt |sort > corp_ug_count_sorted.txt
+
+
+/usr/share/srilm/bin/i686-m64/ngram-count -vocab am_tr_v2.voc -read corp_ug_count.txt -order 1 -lm aihub_tr_sent_lm-1g.arpa
+
+/usr/share/srilm/bin/i686-m64/ngram-count -vocab am_tr_v2.voc -read corp_ug_count.txt -order 2 -lm aihub_tr_sent_lm-2g.arpa
+
+/usr/share/srilm/bin/i686-m64/ngram-count -vocab am_tr_v2.voc -read corp_ug_count.txt -order 3 -lm aihub_tr_sent_lm-3g.arpa
+
+#/usr/share/srilm/bin/i686-m64/ngram-count -vocab am_tr_v2.voc -read corp_ug_count.txt -order 3 -lm aihub_tr_sent_lm-3g
+
+gzip -c aihub_tr_sent_lm-3g.arpa >  am_tr_v2_3-gram_lm.arpa.gz
+
+
+fi
+
+# training and testing split
+if [ "$stage" -eq 0 ]; then
+
+
+
+head -n 600000 $corpus_info/total_sentence-u8.txt > $corpus_info/aihub_tr.tag
+head -n 600000 $corpus_info/total_sentence-u8.txt > $local/aihub_tr.tag
+tail -n 12684 $corpus_info/total_sentence-u8.txt > $corpus_info/aihub_te.tag
+tail -n 12684 $corpus_info/total_sentence-u8.txt > $local/aihub_te.tag
+
+
+head -n 600000 $corpus_info/total_filelist.list > $corpus_info/aihub_tr.flist
+head -n 600000 $corpus_info/total_filelist.list > $local/aihub_tr.flist
+tail -n 12684 $corpus_info/total_filelist.list > $corpus_info/aihub_te.flist
+tail -n 12684 $corpus_info/total_filelist.list > $local/aihub_te.flist
+
+
+fi
+####################################################################
+#g2p change
+
+# sed -i 's/Hello/Hi/g' file-name
+
+
+if [ $stage -eq 0 ]; then
+
+sed -e 's/P/b1'  -e 's/B/b1'  -e 's/PQ/b2' -e 's/PP/bb' -e 's/PH/ph' -e 's/T/d1'  -e 's/D/d1'  -e 's/TQ/d2' -e 's/TT/d2' \
+    -e 's/TH/th' -e 's/K/g1' \
+    -e 's/KQ/g2' -e 's/KK/gg' -e 's/KH/kh' -e 's/Z/j1'  -e 's/ZH/j1' -e 's/ZZ/jj' -e 's/CH/ch' -e 's/S/s1'  -e 's/SS/ss' \
+    -e 's/HH/h1' -e 's/HI/h1' -e 's/MM/m1' -e 's/M/m1'  -e 's/N/n1'  -e 's/NN/n1' -e 's/NX/ng' -e 's/L/ll'  -e 's/R/rr'    \
+    -e 's/AA/aa' -e 's/AX/vv' -e 's/OW/oo' -e 's/UW/uu' -e 's/WW/xx' -e 's/IY/ii' -e 's/EH/ee' -e 's/EY/ee' -e 's/OI/oi' \
+    -e 's/UI/ui' -e 's/JA/ya' -e 's/JX/yv' -e 's/JO/yo' -e 's/JU/yu' -e 's/JH/ye' -e 's/JE/ye' -e 's/WA/wa' -e 's/WX/wv' \
+    -e 's/WH/oi' -e 's/WE/oi' -e 's/WIxi'  -e 's/Q//' -i korean
+
+fi
+
+
+
+
+
+
+
+###############################################
+# training and testing split
+#이건 직접 안해도 된다. 다 자동으로 data_prep.sh에서 된다.
+
+if [ "$stage" -eq 0 ]; then
+
+
+mv aihub_sph.scp aihub_sph.scp.u
+mv aihub_wav.scp aihub_wav.scp.u
+
+awk -F ' ' '{print tolower($1)" "$2}' aihub_sph.scp.u > aihub_sph.scp
+#awk는 self 저장이 안된다.
+
+awk -F ' ' '{print tolower($1)" "$2" "$3" "$4}' aihub_wav.scp.u > aihub_wav.scp
+
+#whole_count=$(cat ktag|sort|wc -l)
+#train-split
+#copy to corpusinfo
+cat aihub.tag|sort|head -n 700 > aihub_tr.tag
+cat aihub_wav.scp|sort|head -n 700 > aihub_tr_wav.scp
+cat aihub.spk2utt|sort|head -n 700 > aihub_tr.spk2utt
+cat aihub.flist|sort|head -n 700 > aihub_tr.flist
+cat aihub_sph.scp|sort|head -n 700 > aihub_tr_sph.scp
+
+cp aihub_tr.flist $corpus_info
+cp aihub_tr.tag $corpus_info
+
+
+#test-split
+#copy to corpusinfo
+
+cat aihub.tag|sort|tail -n 300 > aihub_te.tag
+cat aihub_wav.scp|sort|tail -n 300 > aihub_te_wav.scp
+cat aihub.spk2utt|sort|tail -n 300 > aihub_te.spk2utt
+cat aihub.flist|sort|tail -n 300 > aihub_te.flist
+cat aihub_sph.scp|sort|tail -n 300 > aihub_te_sph.scp
+
+cp aihub_te.flist $corpus_info
+cp aihub_te.tag $corpus_info
+
+#train
+
+#copy to local
+
+cp aihub_tr_wav.scp $local
+
+awk -F '\t' '{print tolower($0)}' aihub_tr.tag > aihub_tr.txt
+cp aihub_tr.txt $local
+cp aihub_tr.tag $local
+
+
+mv aihub_tr.spk2utt aihub_tr.spk2utt.u
+# spk2utt
+awk -F '\t' '{print tolower($0)}' aihub_tr.spk2utt.u > aihub_tr.spk2utt
+
+cp aihub_tr.spk2utt $local
+cp aihub_tr_wav.scp $local
+cp aihub_tr_sph.scp $local
+cp aihub_tr.flist $local
+
+
+
+
+
+#test
+#copy to local
+
+cp aihub_te_wav.scp $local
+
+awk -F '\t' '{print tolower($0)}' aihub_te.tag > aihub_te.txt
+cp aihub_te.txt $local
+cp aihub_te.tag $local
+
+
+mv aihub_te.spk2utt aihub_te.spk2utt.u
+# spk2utt
+awk -F '\t' '{print tolower($0)}' aihub_te.spk2utt.u > aihub_te.spk2utt
+
+cp aihub_te.spk2utt $local
+cp aihub_te_wav.scp $local
+cp aihub_te_sph.scp $local
+cp aihub_te.flist $local
+
+
+
+
+fi
+
+
+
+#vocab
+#if [ "$stage" -eq 0 ]; then
+
+
+#두번쨰 열 이후 추출 
+#awk '{print substr($0, index($0,$2))}' aihub.vocab.utf8.ㅑdica
+#cat aihub.vocab.utf8.dic | cut  -d" " -f2- | sed 's/^ *//g'
+#sort 후 uniq 해야 한다.
+#sed -n '2,$ p' filename 특정 줄 보기
+#sed -n '5,$ p' words_ansi.txt.dic|cut -d' ' -f 2-|tr ' ' '\n' |sort|uniq|wc
+
+#특정 두번째  줄에 추가
+#sed -e '2i\sil' modellist > test
+#copy 발음열: am_tr_v2_u8.dic
+
+#iconv -f cp949 -t utf8 -o am_tr_v2-u8.dic2 am_tr_v2-u8.dic
+
+
+####
+#<s>, </s> 지우기
+
+#am_tr_v2.voc
+
+#fi
+
+####
+
+if [ $stage -eq 0 ]; then
+
+
+### 수동으로 하기
+## 한글 발음열 : TTP2006
+## 영어 발음열 : cmu dictionary 인터넷에서 txt 넣어서 바꾼다
+## dost2unix -> iconv 로 바꾸거나, notepad plus에서 미리 바꾸기
+## linux, utf-8
+## phone 부분은 ascii여도 상관 없음
+## 발음열 부분은 utf-8이어야 함
+## 발음열 사전 Tab으로 구분하기
+## 발음열 사전 끝에 ' '있으면 에러 난다.
+
+
+cp am_tr_v2-u8.dic2 am_tr_v2_sorted-u8.dic2
+awk -F '\t' '{print $2}' am_tr_v2-u8.dic2 |tr ' ' '\n' |sort|uniq|tr -d '^M' > nonsilence_phones.txt
+sed -e '2i\sil' nonsilence_phones.txt > modellist
+echo -e "sil\nSPN\nLAU" > silence_phones.txt
+echo -e "sil" > optional_silence.txt
+
+#lexicon1_raw_nosil은 sil이 없어야 한다.
+
+
+#### 발음열에서 복사해오기
+sed '1d' am_tr_v2_sorted-u8.dic2 > lexicon1_raw_nosil.txt
+
+### 수동으로 하기
+#modelist 42로 맞추기
+#sil 지우고, sp 추가
+#nonsilence phone 40개
+#silence phones 4개
+#optional silence 맞추기
+
+fi
+
+if [ $stage -eq 1 ]; then
+#vocab to local
+
+
+dos2unix nonsilence_phones.txt
+dos2unix optional_silence.txt
+dos2unix silence_phones.txt
+dos2unix lexicon1_raw_nosil.txt
+dos2unix am_tr_v2_sorted-u8.dic2
+dos2unix am_tr_v2-u8.dic2
+dos2unix lexicon1_raw_nosil.txt
+dos2unix am_tr_v2.voc
+dos2unix corp_ug_count_sorted.txt
+dos2unix corp_ug_count.txt
+
+
+cp nonsilence_phones.txt $local
+cp optional_silence.txt $local
+cp silence_phones.txt $local
+cp lexicon1_raw_nosil.txt $local
+
+#vocab to corpus_info
+
+cp lexicon1_raw_nosil.txt $corpus_info
+cp am_tr_v2_sorted-u8.dic2 $corpus_info
+cp am_tr_v2-u8.dic2 $corpus_info
+
+cp silence_phones.txt $corpus_info
+cp optional_silence.txt $corpus_info
+cp nonsilence_phones.txt $corpus_info
+cp modellist $corpus_info
+
+#cp aihub_3gram.lm $corpus_info
+#cp aihub_3gram.lm.gz $corpus_info
+
+
+cp am_tr_v2_3-gram_lm.arpa.gz $corpus_info
+cp am_tr_v2.voc $corpus_info
+cp corp_ug_count_sorted.txt $corpus_info
+cp corp_ug_count.txt $corpus_info
+
+
+
+
+
+
+fi
