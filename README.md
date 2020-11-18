@@ -1,16 +1,22 @@
 # seogyeongchoi
 
-Hatespeech: 
+hatespeech: 
 Automated hatespeech classifier for twitter
 
-Emotionclassifier:
+emotionclassifier:
 Ancient Chinese poems classified into five different emotions based on corpus
 
-Moviereview:
+moviereview:
 Movie review analysis (positive or negative)
 
-Mindistance:
+mindistance:
 Calculating minimum distance between two words
 
-Denoise:
+denoise:
 Reducing noise from audio
+
+aihubprep:
+Preping aihub data for Kaldi
+
+smitosrt:
+Converting .smi file to .srt
