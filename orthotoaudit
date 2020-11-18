@@ -1,0 +1,88 @@
+# -*- coding: utf-8 -*-
+
+# 수정 일자: 2020년 9월 3일
+# 나중에할일:
+#    4. g2pk는 리눅스에서만 작동하는 mecab을 사용해서 윈도우에서(즉 연구원 개인 컴퓨터가 윈도우라면) 사용 불가!
+#         -> g2pk 말고 다른 걸 써야 하는지 아니면 리눅스 환경 사용 가능한 사람이 작업하고 뿌릴지?
+#    5. g2pk를 쓴다면 descriptive, group_vowels, to_syl 옵션 사용 여부 정하기
+
+import argparse
+import os, sys
+from praatio import tgio
+from collections import namedtuple, OrderedDict
+from g2pk import G2p
+g2p = G2p()
+Interval = namedtuple('Interval', ['start', 'end', 'label'])
+
+parser = argparse.ArgumentParser()
+parser.add_argument("filename", type=str,
+        help="발음전사를 추가할 파일 이름을 입력합니다.")
+parser.add_argument("-s", "--suffix", type=str,
+        help="변환된 파일 이름에 붙을 접미사를 지정합니다. (기본: _audit)")
+parser.add_argument("-d", "--destination", type=str,
+        help="변환된 파일의 경로를 지정합니다. (기본: 해당 파일 위치에 하위 폴더 audit 생성)")
+args = parser.parse_args()
+
+filePath, fileName = os.path.split(os.path.abspath(args.filename))
+
+if args.suffix == None:
+    auditFileName = fileName.rsplit('.')[0] + "_audit" + ".TextGrid"
+else: auditFileName = fileName.rsplit('.')[0] + args.suffix + ".TextGrid"
+
+if args.destination == None:
+    auditFilePath = os.path.abspath(os.path.join(filePath, "audit"))
+else:
+    if (args.destination.startswith('.')) or (args.destination.startswith('/')) or (args.destination.startswith('~')):
+        auditFilePath = os.path.abspath(args.destination)
+    else:       
+        auditFilePath = os.path.abspath(os.path.join(filePath, args.destination))
+
+
+# 파일 열기 및 티어 정렬: 없는 티어는 만들어주되, DO/PO/CO는 없으면 오류 발생
+keys = ['DO', 'DA', 'PO', 'PA', 'CO', 'CA', 'N', 'CODE']
+tg = tgio.openTextgrid(os.path.join(filePath, fileName))
+tg.tierDict = OrderedDict(tg.tierDict)
+
+for key in keys:
+    if not key in tg.tierDict.keys():
+        if key == 'DO' or key == 'PO' or key == 'CO':
+            print('[{}] 발음전사 파일 생성 실패: {} 티어가 존재하지 않습니다.'.format(fileName, key))
+            raise RuntimeError
+        tg.tierNameList.append(key)
+        tg.tierDict[key] = tgio.IntervalTier(name=key, minT=tg.minTimestamp, maxT=tg.maxTimestamp, entryList=[])
+    tg.tierDict.move_to_end(key)
+tg.tierNameList = keys
+
+
+# 전사 내용 중 줄바꿈 기호 있는지 체크: 있으면 정상적으로 TextGrid를 읽지 못해서 변환 후에 Praat에서 안 열림
+newLineChecker = False
+for key in tg.tierDict.keys():
+    for entry in tg.tierDict[key].entryList:
+        if entry.label.startswith('"'):
+            print('[{}] 경고: 전사 내용 안에 줄바꿈 기호가 있는 것으로 보입니다. 변환 후 파일이 Praat에서 열리지 않을 수 있습니다.'.format(fileName))
+            print(entry)
+            newLineChecker = True
+            break
+    if newLineChecker == True:
+        break
+
+
+# 발음전사로 변환
+for source, dest in [('DO', 'DA'), ('PO', 'PA'), ('CO', 'CA')]:
+    tg.tierDict[dest].entryList = []
+    for i in range(len(tg.tierDict[source].entryList)):
+        interval = tg.tierDict[source].entryList[i]
+        tg.tierDict[dest].entryList.append(Interval(
+                interval.start,
+                interval.end,
+                g2p(interval.label, descriptive=True, group_vowels=False, to_syl=True)
+                ))
+
+
+# 발음전사 파일 생성
+if not os.path.exists(auditFilePath):
+    os.makedirs(auditFilePath)
+tg.save(os.path.join(auditFilePath, auditFileName), useShortForm=True)
+
+print('[{}] 발음전사 파일 생성 완료: {}'.format(fileName, os.path.join(auditFilePath, auditFileName)))
+
