@@ -1,0 +1,68 @@
+# -*- coding: utf-8 -*-
+
+import numpy as np
+
+def min_edit_dist(source, target, ins_cost=1, del_cost=1, sub_cost=2, print_d=False):
+    n, m = map(len, (source, target))
+    
+    # initialization
+    D = np.zeros((n+1, m+1), dtype=int) # assume that all costs are int
+    D[1:,0] = np.arange(1, n+1) * del_cost
+    D[0,1:] = np.arange(1, m+1) * ins_cost
+    
+    # recurrence relation
+    for i, s_i in enumerate(source, start=1):
+        for j, t_j in enumerate(target, start=1):
+            D[i,j] = min(
+                            D[i-1,j] + del_cost,
+                            D[i-1,j-1] + (0 if s_i == t_j else sub_cost),
+                            D[i,j-1] + ins_cost
+                        )
+    
+    # termination
+    if print_d:
+        print(D)
+    return D[-1,-1]
+
+if __name__ == '__main__':
+    # Figure 2.15
+    print('source=intention, target=execution')
+    min_edit_dist('intention', 'execution', print_d=True)
+    # further examples
+    print()
+    print('source=internet, target=intranet')
+    min_edit_dist('internet', 'intranet', print_d=True)
+    print()
+    print('source=happy, target=unhappy')
+    min_edit_dist('happy', 'unhappy', print_d=True)
+    print()
+    print('source=colour, target=color')
+    min_edit_dist('colour', 'color', print_d=True)
+
+
+# Install pandas(https://pandas.pydata.org/) and uncomment the below
+# if __name__ == '__main__':
+#     import pandas as pd
+#     def print_D(source, target, ins_cost=1, del_cost=1, sub_cost=2):
+#         n, m = map(len, (source, target))
+#         # initialization
+#         D = np.zeros((n+1, m+1), dtype=int)
+#         D[1:,0] = np.arange(1, n+1) * del_cost
+#         D[0,1:] = np.arange(1, m+1) * ins_cost
+#         # recurrence relation
+#         for i, s_i in enumerate(source, start=1):
+#             for j, t_j in enumerate(target, start=1):
+#                 D[i,j] = min(
+#                                 D[i-1,j] + del_cost,
+#                                 D[i-1,j-1] + (0 if s_i == t_j else sub_cost),
+#                                 D[i,j-1] + ins_cost
+#                             )
+#         # print D (prettier)
+#         D = pd.DataFrame(D)
+#         D.index, D.columns = tuple('#'+source), tuple('#'+target)
+#         print(D)
+#    
+#     print_D('intention', 'execution')
+#     print_D('internet', 'intranet')
+#     print_D('happy', 'unhappy')
+#     print_D('colour', 'color', ins_cost=2, sub_cost=3)
